@@ -1,40 +1,34 @@
 name: Deploy Batch
-
 on:
   push:
     branches: [ main ]
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Deploy to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
+          username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "batch/"
-          target: "/home/ubuntu/saferoom-batch"
-
+          source: "batch/,requirements.txt"
+          target: "/home/ec2-user/saferoom-batch"
       - name: Create .env and install dependencies
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
+          username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cat > /home/ubuntu/saferoom-batch/.env << EOF
+            cat > /home/ec2-user/saferoom-batch/.env << EOF
             DB_HOST=localhost
             DB_PORT=5433
             DB_USERNAME=${{ secrets.DB_USERNAME }}
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
             MOLIT_SERVICE_KEY=${{ secrets.MOLIT_SERVICE_KEY }}
             EOF
-            
-            cd /home/ubuntu/saferoom-batch
+            cd /home/ec2-user/saferoom-batch
             pip3 install -r requirements.txt
