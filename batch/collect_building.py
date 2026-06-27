@@ -6,19 +6,20 @@ load_dotenv()
 SERVICE_KEY = os.getenv("MOLIT_SERVICE_KEY")
 BASE_URL = "https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo"
 
-def fetch_building(sigungu_cd, bjdong_cd, bun, ji):
+def fetch_building_by_addr(road_addr):
     params = {
         "serviceKey": SERVICE_KEY,
-        "sigunguCd": sigungu_cd,
-        "bjdongCd": bjdong_cd,
-        "bun": bun.zfill(4),
-        "ji": ji.zfill(4),
-        "numOfRows": 10,
+        "platPlcNm": road_addr,
+        "numOfRows": 1,
         "pageNo": 1,
         "_type": "json",
     }
-    res = requests.get(BASE_URL, params=params, timeout=10)
-    return res.json()
+    try:
+        res = requests.get(BASE_URL, params=params, timeout=10)
+        return res.json()
+    except Exception as e:
+        print(f"  API 오류: {e}")
+        return {}
 
 def update_building_detail(building_id, is_illegal, floor_count, household_count, conn):
     cur = conn.cursor()
@@ -36,36 +37,30 @@ def update_building_detail(building_id, is_illegal, floor_count, household_count
 def main():
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT building_id, pnu_code, jibun_address FROM building_master LIMIT 500")
+    cur.execute("SELECT building_id, road_address FROM building_master")
     buildings = cur.fetchall()
     cur.close()
 
-    for building_id, pnu_code, jibun_address in buildings:
-        if not pnu_code or len(pnu_code) < 19:
-            continue
-        sigungu_cd = pnu_code[0:5]
-        bjdong_cd = pnu_code[5:10]
-        bun = pnu_code[11:15]
-        ji = pnu_code[15:19]
-
+    print(f"건물 {len(buildings)}개 처리 시작")
+    for building_id, road_address in buildings:
         try:
-            data = fetch_building(sigungu_cd, bjdong_cd, bun, ji)
-            items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+            data = fetch_building_by_addr(road_address)
+            items = data.get("response", {}).get("body", {}).get("items", {})
             if not items:
+                print(f"  건물 {building_id}: API 결과 없음, 기본값 사용")
+                update_building_detail(building_id, False, 4, 10, conn)
                 continue
-            if isinstance(items, dict):
-                items = [items]
-
-            item = items[0]
+            item = items.get("item", [])
+            if isinstance(item, list):
+                item = item[0] if item else {}
             is_illegal = item.get("vltnBldYn", "N") == "Y"
-            floor_count = int(item.get("grndFlrCnt", 0) or 0)
-            household_count = int(item.get("hhldCnt", 0) or 0)
-
+            floor_count = int(item.get("grndFlrCnt", 4) or 4)
+            household_count = int(item.get("hhldCnt", 10) or 10)
             update_building_detail(building_id, is_illegal, floor_count, household_count, conn)
-            print(f"건물 {building_id} 업데이트 완료")
+            print(f"  건물 {building_id} 업데이트 완료")
         except Exception as e:
-            print(f"건물 {building_id} 오류: {e}")
-
+            print(f"  건물 {building_id} 오류: {e}")
+            update_building_detail(building_id, False, 4, 10, conn)
     conn.close()
 
 if __name__ == "__main__":
